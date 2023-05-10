@@ -763,6 +763,81 @@ static broadcaster_ops_t atc1441_temp_hum_ops = {
     .metadata_get = atc1441_temp_hum_metadata_get,
 };
 
+/* iopool EcO https://iopool.com */
+
+#define IOPOOL_ECO_COMPANY_ID 0x074C
+
+typedef struct {
+    uint16_t company_id;
+    uint8_t beacon_version;
+    uint8_t device_mode;
+    uint8_t sequence;
+    uint16_t ph;
+    uint16_t orp;
+    uint16_t temperature;
+    uint16_t conductivity;
+    uint8_t activity_battery;
+    uint16_t minutes;
+} __attribute__((packed)) iopool_eco_t;
+
+static iopool_eco_t *iopool_eco_data_get(uint8_t *adv_data,
+    uint8_t adv_data_len, uint8_t *iopool_eco_len)
+{
+    uint8_t len;
+    uint8_t *data = esp_ble_resolve_adv_data(adv_data,
+        ESP_BLE_AD_MANUFACTURER_SPECIFIC_TYPE, &len);
+
+    if (iopool_eco_len)
+        *iopool_eco_len = len;
+
+    return (iopool_eco_t *)data;
+}
+static int iopool_eco_is_broadcaster(uint8_t *adv_data,
+    size_t adv_data_len)
+{
+    uint8_t len;
+    iopool_eco_t *iopool_data = iopool_eco_data_get(adv_data,
+        adv_data_len, &len);
+
+    if (len < sizeof(iopool_eco_t) ||
+        le16toh(iopool_data->company_id) != IOPOOL_ECO_COMPANY_ID)
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+static void iopool_eco_metadata_get(uint8_t *adv_data,
+    size_t adv_data_len, int rssi, broadcaster_meta_data_cb_t cb, void *ctx)
+{
+    char s[200];
+    uint8_t len;
+    iopool_eco_t *iopool_data = iopool_eco_data_get(adv_data,
+        adv_data_len, &len);
+
+    sprintf(s, "{\"rssi\":%d,\"beaconVersion\":%u,\"deviceMode\":%u,\"sequence\":%u,\"ph\":%u,\"orp\":%u,\"temperature\":%u,\"conductivity\":%u,\"activity\":%u,\"battery\":%u,\"minutes\":%u}",
+        rssi,
+        iopool_data->beacon_version,
+        iopool_data->device_mode,
+        iopool_data->sequence,
+        be16toh(iopool_data->ph),
+        be16toh(iopool_data->orp),
+        be16toh(iopool_data->temperature),
+        be16toh(iopool_data->conductivity),
+        (iopool_data->activity_battery & 0xC0) >> 6,
+        (iopool_data->activity_battery & 0x3f) * 2,
+        be16toh(iopool_data->minutes) >> 5);
+
+    cb("Measure", s, ctx);
+}
+
+static broadcaster_ops_t iopool_eco_ops = {
+    .name = "iopool EcO",
+    .is_broadcaster = iopool_eco_is_broadcaster,
+    .metadata_get = iopool_eco_metadata_get,
+};
+
 /* Common */
 static broadcaster_ops_t *broadcaster_ops[] = {
     &ibeacon_ops,
@@ -770,6 +845,7 @@ static broadcaster_ops_t *broadcaster_ops[] = {
     &mijia_sensor_ops,
     &beewi_smart_door_ops,
     &atc1441_temp_hum_ops,
+    &iopool_eco_ops,
     NULL
 };
 
